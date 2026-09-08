@@ -1,0 +1,57 @@
+# Node / Frontend Dependencies
+node_modules/
+frontend/node_modules/
+.pnp
+.pnp.js
+
+# Build Outputs
+dist/
+build/
+frontend/dist/
+frontend/build/
+
+# Python / Backend Environments & Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/__pycache__/
+backend/*/__pycache__/
+backend/*/*/__pycache__/
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+ENV/
+env/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local Environment Variables & Secrets (CRITICAL: DO NOT COMMIT REAL KEYS)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+backend/.env
+frontend/.env
+
+# Local Database Scratch Data / Cache
+backend/data/firestore_store.json
+backend/data/cache/
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Agent Logs & Internal Scratch
+.gemini/
+*.log

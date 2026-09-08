@@ -1,0 +1,150 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg-primary: #030712;
+    --bg-secondary: #081120;
+    --bg-card: #0f172a;
+    --bg-card-hover: #1e293b;
+    --gold: #06b6d4;
+    --gold-glow: rgba(6, 182, 212, 0.25);
+    --cyan: #38bdf8;
+    --emerald: #10b981;
+    --purple: #8b5cf6;
+    --crimson: #f43f5e;
+  }
+
+  body {
+    background-color: #030712;
+    color: #f0f9ff;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* Custom Cinema Scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #030712;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e293b;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #06b6d4;
+  }
+}
+
+/* Cyber Cyan Glassmorphism Base Panels */
+.cinema-glass {
+  background: rgba(8, 20, 36, 0.85);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+  box-shadow: 0 0 25px rgba(6, 182, 212, 0.1);
+}
+
+aside {
+  background-color: #040d1a !important;
+  border-color: rgba(6, 182, 212, 0.25) !important;
+}
+
+header {
+  background-color: rgba(4, 13, 26, 0.9) !important;
+  border-color: rgba(6, 182, 212, 0.25) !important;
+}
+
+.cinema-glass-gold {
+  background: rgba(26, 20, 10, 0.75);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
+.cinema-glass-cyan {
+  background: rgba(8, 24, 36, 0.75);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(6, 182, 212, 0.25);
+}
+
+.cinema-glass-emerald {
+  background: rgba(6, 28, 20, 0.75);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.cinema-glass-purple {
+  background: rgba(20, 12, 36, 0.75);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+}
+
+.cinema-glass-rose {
+  background: rgba(32, 10, 20, 0.75);
+  backdrop-filter: blur(18px);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+}
+
+/* Glow Effects */
+.cinema-glow-gold {
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.15);
+}
+
+.cinema-glow-cyan {
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.15);
+}
+
+.cinema-glow-emerald {
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.15);
+}
+
+.cinema-glow-purple {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.15);
+}
+
+.cinema-glow-rose {
+  box-shadow: 0 0 30px rgba(244, 63, 94, 0.15);
+}
+
+/* Animated glow pulse */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-glow {
+  animation: pulse-glow 3s infinite ease-in-out;
+}
+
+/* Glow Effects */
+.cinema-glow-gold {
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.15);
+}
+
+.cinema-glow-cyan {
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.15);
+}
+
+.cinema-glow-emerald {
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.15);
+}
+
+.cinema-glow-purple {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.15);
+}
+
+.cinema-glow-rose {
+  box-shadow: 0 0 30px rgba(244, 63, 94, 0.15);
+}
+
+/* Animated glow pulse */
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-glow {
+  animation: pulse-glow 3s infinite ease-in-out;
+}

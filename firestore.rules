@@ -1,0 +1,68 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        request.auth.token.admin == true ||
+        request.auth.uid == "MOVIEOS-ADMIN-001"
+      );
+    }
+
+    // Users Collection Security
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && (
+        // Prevent normal users from registering as admin
+        request.resource.data.role != "ADMIN" &&
+        request.resource.data.role != "admin"
+      );
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        // Prevent normal users from altering their role or admin status
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'admin', 'status'])
+      );
+      allow delete: if isAdmin() && userId != "MOVIEOS-ADMIN-001";
+    }
+
+    // Cinema Productions & Workspace Data
+    match /movies/{movieId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /scenes/{sceneId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /schedules/{scheduleId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /expenses/{expenseId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /departments/{departmentId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /ai_analysis/{analysisId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
