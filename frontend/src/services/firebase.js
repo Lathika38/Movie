@@ -27,7 +27,7 @@ import {
 } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDOEP8-bpTzHket03OMRoT3HduK_aL1rDQ",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDOEP8-bpTzHket030MRoT3HduK_aL1rDQ",
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "hack1-2ee5e.firebaseapp.com",
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "hack1-2ee5e",
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "hack1-2ee5e.firebasestorage.app",

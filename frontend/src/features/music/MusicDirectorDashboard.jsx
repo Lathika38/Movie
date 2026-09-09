@@ -171,6 +171,73 @@ export const MusicDirectorDashboard = () => {
     }
   };
 
+  // Auto-compose Initial Soundtrack from Screenplay
+  const handleAutoComposeSoundtrack = async () => {
+    if (!activeMovie?.id) return;
+    setAiLoading(true);
+    showToast("✨ AI Music Engine analyzing screenplay & orchestrating cues...", "info");
+    try {
+      const q = `Compose 3 to 4 complete soundtrack cues for '${activeMovie.title}'. Genre: '${activeMovie.genre || 'Cinema'}'. Logline: '${activeMovie.logline || 'Feature Film'}'. Return structured JSON cues.`;
+      let res = null;
+      try {
+        res = await aiApi.runMusicAi(activeMovie.id, q, null, null, 'SCORE_DIRECTION');
+      } catch (e) {
+        console.warn("AI music call fallback:", e);
+      }
+
+      const suggestedCues = res?.exampleCues || [
+        {
+          title: `${activeMovie.title} — Main Title Overture`,
+          trackType: 'THEME',
+          mood: 'Epic & Grandiose',
+          bpm: 96,
+          keySignature: 'D Minor',
+          durationSeconds: 210,
+          notes: 'Full orchestral opening theme establishing main cinematic motif with hybrid synths.'
+        },
+        {
+          title: `${activeMovie.title} — Rising Shadow & Tension`,
+          trackType: 'BGM',
+          mood: 'High Tension & Suspense',
+          bpm: 132,
+          keySignature: 'C Minor',
+          durationSeconds: 165,
+          notes: 'Pulsing analog synth bassline with staccato string ostinato and Taiko percussion.'
+        },
+        {
+          title: `${activeMovie.title} — Emotional Catharsis & Reverie`,
+          trackType: 'THEME',
+          mood: 'Melancholic & Reflective',
+          bpm: 74,
+          keySignature: 'A Minor',
+          durationSeconds: 195,
+          notes: 'Solo cello and felt piano theme for intimate character drama.'
+        }
+      ];
+
+      for (const cue of suggestedCues) {
+        await musicApi.createTrack({
+          movieId: activeMovie.id,
+          title: cue.title,
+          trackType: cue.trackType || 'THEME',
+          mood: cue.mood || 'Cinematic',
+          bpm: cue.bpm || 120,
+          keySignature: cue.keySignature || 'C Minor',
+          durationSeconds: cue.durationSeconds || 180,
+          notes: cue.notes || 'Composed via MovieOS AI Music Studio',
+          waveformPeaks: [0.2, 0.45, 0.7, 0.85, 0.95, 0.65, 0.5, 0.8, 0.9, 0.75, 0.6, 0.4, 0.35, 0.65, 0.8, 0.5]
+        });
+      }
+
+      showToast("✨ Soundtrack cues generated and added to score library!", "success");
+      await loadMusicData();
+    } catch (err) {
+      showToast(`Auto-Compose error: ${err.message}`, "error");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // Create New Track
   const handleCreateTrack = async (e) => {
     e.preventDefault();
@@ -511,13 +578,32 @@ export const MusicDirectorDashboard = () => {
           </div>
 
           {tracks.length === 0 ? (
-            <EmptyState
-              icon={Music}
-              title="No Soundtrack Cues Created"
-              description="No music tracks have been created for this project. Click 'New Soundtrack Cue' to compose or upload your first cue."
-              actionLabel="Create Soundtrack Cue"
-              onAction={() => setIsNewTrackModalOpen(true)}
-            />
+            <div className="cinema-glass rounded-3xl p-10 sm:p-14 border border-purple-500/30 text-center max-w-2xl mx-auto space-y-4 animate-in fade-in">
+              <div className="w-16 h-16 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 mx-auto">
+                <Music className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-bold text-slate-100 font-['Outfit']">No Soundtrack Cues Created Yet</h3>
+              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                Start scoring '{activeMovie.title}'. Create custom soundtrack cue sheets, upload audio stems, or use the AI Music Copilot to analyze the screenplay and generate cues.
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
+                <button
+                  onClick={() => setIsNewTrackModalOpen(true)}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-amber-500/20 transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Create Soundtrack Cue</span>
+                </button>
+                <button
+                  onClick={handleAutoComposeSoundtrack}
+                  disabled={aiLoading}
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-2 cursor-pointer shadow-lg shadow-purple-600/30 transition-all disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{aiLoading ? "Composing..." : "✨ AI Auto-Compose from Script"}</span>
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {tracks.map((trk) => {
@@ -608,27 +694,51 @@ export const MusicDirectorDashboard = () => {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between gap-3 bg-slate-900/50 p-3 rounded-2xl border border-dashed border-slate-700">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/60 p-3 rounded-2xl border border-dashed border-slate-700/80">
                           <div className="flex items-center gap-2 text-xs text-slate-400">
                             <FileAudio className="w-4 h-4 text-purple-400 shrink-0" />
-                            <span>No audio file uploaded</span>
+                            <span>Live Harmonic Synth Available</span>
                           </div>
 
-                          <label className="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm">
-                            <Upload className="w-3.5 h-3.5" />
-                            <span>{isUploading ? 'Uploading...' : 'Upload Audio'}</span>
-                            <input
-                              type="file"
-                              accept="audio/*"
-                              disabled={isUploading}
-                              className="hidden"
-                              onChange={(e) => {
-                                if (e.target.files?.[0]) {
-                                  handleAudioFileUpload(e.target.files[0], trk.id);
-                                }
-                              }}
-                            />
-                          </label>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handlePlaySynthesizedExample(trk)}
+                              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm ${
+                                playingExampleCueId === trk.id
+                                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold animate-pulse'
+                                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                              }`}
+                            >
+                              {playingExampleCueId === trk.id ? (
+                                <>
+                                  <Square className="w-3.5 h-3.5 fill-current" />
+                                  <span>Stop Synth</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>Play Synth</span>
+                                </>
+                              )}
+                            </button>
+
+                            <label className="px-3 py-1.5 rounded-xl bg-purple-600/20 hover:bg-purple-600 text-purple-300 hover:text-white border border-purple-500/30 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 shadow-sm">
+                              <Upload className="w-3.5 h-3.5" />
+                              <span>{isUploading ? 'Uploading...' : 'Upload Stem'}</span>
+                              <input
+                                type="file"
+                                accept="audio/*"
+                                disabled={isUploading}
+                                className="hidden"
+                                onChange={(e) => {
+                                  if (e.target.files?.[0]) {
+                                    handleAudioFileUpload(e.target.files[0], trk.id);
+                                  }
+                                }}
+                              />
+                            </label>
+                          </div>
                         </div>
                       )}
 

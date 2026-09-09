@@ -1,6 +1,6 @@
 import uuid
 import io
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status, Depends
 from pypdf import PdfReader
@@ -81,9 +81,53 @@ def analyze_script_text(
         db.set_document("characters", ch_id, ch)
         saved_characters.append(CharacterSchema(**ch))
 
-    # Update movie with logline and total scenes if missing
-    if not movie.get("logline") and analysis.get("summary"):
-        db.update_document("movies", payload.movieId, {"logline": analysis.get("summary")})
+    # Wipe and auto-generate shooting schedules / call sheets for Producer
+    existing_schedules = db.query_collection("schedules", filters=[("movieId", "==", payload.movieId)])
+    for sch in existing_schedules:
+        db.delete_document("schedules", sch["id"])
+
+    base_date = datetime.now(timezone.utc)
+    for idx, sc in enumerate(saved_scenes):
+        sc_dict = sc.model_dump() if hasattr(sc, "model_dump") else sc
+        sc_date = (base_date + timedelta(days=idx * 2 + 1)).strftime("%Y-%m-%d")
+        sc_num = sc_dict.get("sceneNumber", idx + 1)
+        heading = sc_dict.get("heading") or f"Scene {sc_num}"
+        loc = sc_dict.get("location") or "Studio Soundstage"
+        setting = sc_dict.get("setting", "EXT")
+        sched_item = {
+            "id": str(uuid.uuid4()),
+            "movieId": payload.movieId,
+            "sceneId": sc_dict.get("id"),
+            "sceneNumber": sc_num,
+            "title": f"Scene {sc_num}: {heading}",
+            "sceneHeading": heading,
+            "location": loc,
+            "setting": setting,
+            "shootingDate": sc_date,
+            "startTime": "06:30 AM",
+            "endTime": "06:30 PM",
+            "callTime": "06:30 AM",
+            "wrapTime": "06:30 PM",
+            "charactersNeeded": sc_dict.get("characters", []),
+            "equipmentNeeded": ["Main Cinema Camera Package", "Sound Boom Kit", "Lighting Rigs"],
+            "propsNeeded": [],
+            "assignedCrew": ["Director", "DOP / Cinematographer", "Sound Recordist", "Gaffer", "Line Producer"],
+            "status": "SCHEDULED",
+            "weatherRiskLevel": "LOW" if setting == "INT" else "MEDIUM",
+            "weatherNotes": "Indoor soundstage - weather shielded" if setting == "INT" else "Live meteorological monitoring active.",
+            "notes": sc_dict.get("description", "Filming planned according to director breakdown"),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "updatedAt": datetime.now(timezone.utc).isoformat()
+        }
+        db.set_document("schedules", sched_item["id"], sched_item)
+
+    # Update movie with logline, totalScenes, shooting days
+    db.update_document("movies", payload.movieId, {
+        "logline": analysis.get("summary") or movie.get("logline", ""),
+        "totalScenes": len(saved_scenes),
+        "estimatedShootingDays": analysis.get("estimatedShootingDays", 30),
+        "productionComplexity": analysis.get("productionComplexity", "Medium")
+    })
 
     res = ScriptAnalysisResponse(
         movieId=payload.movieId,

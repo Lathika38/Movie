@@ -476,6 +476,10 @@ export const DirectorDashboard = () => {
                     <h3 className="text-sm font-bold text-slate-100 font-['Cinzel'] tracking-wide">
                       {scene.heading}
                     </h3>
+                    <div className='flex items-center gap-2 text-xs text-amber-300 font-bold bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20 mt-2.5'>
+                      <MapPin className='w-3.5 h-3.5 text-amber-400 shrink-0' />
+                      <span>Filming Location: <strong className='text-white'>{scene.location || 'Filming Stage'}</strong></span>
+                    </div>
                     <p className="text-xs text-slate-300 mt-2 leading-relaxed">
                       {scene.synopsis}
                     </p>

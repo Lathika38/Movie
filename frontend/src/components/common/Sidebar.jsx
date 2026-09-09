@@ -38,8 +38,7 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           bgAccent: 'from-amber-500/20 to-amber-500/5',
           borderAccent: 'border-amber-500/30',
           items: [
-            { label: 'Director Suite', path: '/director#breakdown', icon: Clapperboard, defaultTab: true },
-            { label: 'Screenplay & Scenes', path: '/director#scenes', icon: FileText },
+            { label: 'Screenplay & Scenes', path: '/director#breakdown', icon: FileText, defaultTab: true },
             { label: 'Casting Dispatch', path: '/director#casting', icon: Users },
             { label: 'Score & Music Reviews', path: '/director#music', icon: Music },
             { label: 'Script Upload & AI', path: '/director#upload', icon: Upload },
@@ -55,6 +54,7 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           borderAccent: 'border-cyan-500/30',
           items: [
             { label: 'Producer Portfolio', path: '/producer#overview', icon: Briefcase, defaultTab: true },
+            { label: 'Screenplay Breakdown', path: '/producer#screenplay', icon: FileText },
             { label: 'Shooting Schedules', path: '/producer#schedules', icon: Calendar },
             { label: 'Budget & Financials', path: '/producer#budget', icon: DollarSign },
             { label: 'Departments & Crew', path: '/producer#departments', icon: Layers },

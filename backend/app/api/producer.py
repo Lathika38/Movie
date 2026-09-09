@@ -1,6 +1,6 @@
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, status, Depends
 from app.core.database import db
@@ -41,6 +41,31 @@ def get_movie_schedules(
 ):
     _check_movie_access(movie_id, current_user)
     schedules = db.query_collection("schedules", filters=[("movieId", "==", movie_id)], order_by="shootingDate")
+    if not schedules:
+        scenes = db.query_collection("scenes", filters=[("movieId", "==", movie_id)])
+        if scenes:
+            base_date = datetime.now(timezone.utc)
+            for idx, sc in enumerate(scenes):
+                sc_date = (base_date + timedelta(days=idx * 2 + 1)).strftime("%Y-%m-%d")
+                sched_item = {
+                    "id": str(uuid.uuid4()),
+                    "movieId": movie_id,
+                    "sceneId": sc.get("id"),
+                    "sceneNumber": sc.get("sceneNumber", idx + 1),
+                    "sceneHeading": sc.get("heading", "SCENE"),
+                    "location": sc.get("location", "Filming Stage"),
+                    "shootingDate": sc_date,
+                    "callTime": "06:30 AM",
+                    "wrapTime": "06:30 PM",
+                    "status": "PLANNED",
+                    "assignedCrew": ["DOP", "Sound Recordist", "Gaffer", "Art Director"],
+                    "weatherNotes": "Optimal daylight recording.",
+                    "notes": "Cast present for filming",
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                    "updatedAt": datetime.now(timezone.utc).isoformat()
+                }
+                db.set_document("schedules", sched_item["id"], sched_item)
+                schedules.append(sched_item)
     return ApiResponse(success=True, data=[ScheduleItemResponse(**s) for s in schedules])
 
 @router.post("/schedules", response_model=ApiResponse[ScheduleItemResponse])

@@ -39,6 +39,7 @@ import {
   CheckCircle2,
   Users,
   Film,
+  FileText,
   Edit3,
   Trash2,
   Search,
@@ -53,7 +54,7 @@ const COLORS = ['#f59e0b', '#06b6d4', '#10b981', '#8b5cf6', '#f43f5e'];
 
 export const ProducerDashboard = () => {
   const { user } = useAuth();
-  const { activeMovie, movies, setActiveMovieId, deleteMovie, loading: movieLoading } = useMovie();
+  const { activeMovie, movies, setActiveMovieId, deleteMovie, scenes = [], characters = [], refreshActiveMovieData, loading: movieLoading } = useMovie();
   const { showToast } = useNotifications();
   const location = useLocation();
 
@@ -142,17 +143,30 @@ export const ProducerDashboard = () => {
   const [aiRiskReport, setAiRiskReport] = useState(null);
   const [analyzingRisk, setAnalyzingRisk] = useState(false);
 
+  // Screenplay Breakdown Filter State
+  const [screenplaySearch, setScreenplaySearch] = useState('');
+  const [screenplaySettingFilter, setScreenplaySettingFilter] = useState('ALL');
+
   const handleInspectScheduleWeather = async (sch) => {
-    setSelectedScheduleForWeather(sch);
-    setSelectedScheduleId(sch.id);
+    handleInspectLocationWeather(sch.location, sch.title || sch.sceneHeading, sch.shootingDate, sch.setting);
+    if (sch.id) setSelectedScheduleId(sch.id);
+  };
+
+  const handleInspectLocationWeather = async (locationName, title = 'Filming Location', dateStr = null, setting = 'EXT') => {
+    const loc = locationName || weatherLocation || 'Chennai, India';
+    setSelectedScheduleForWeather({
+      title: title || `Filming Location: ${loc}`,
+      location: loc,
+      shootingDate: dateStr || 'Upcoming Production Day',
+      setting: setting || 'EXT'
+    });
     setLoadingScheduleWeather(true);
     setScheduleWeatherReport(null);
     try {
-      const loc = sch.location || weatherLocation || 'Los Angeles, CA';
-      const wRes = await weatherApi.getWeather(loc);
+      const wRes = await weatherApi.getWeather(loc, dateStr);
       setScheduleWeatherReport(wRes);
     } catch (err) {
-      console.error("Schedule weather fetch error:", err);
+      console.error("Location weather fetch error:", err);
       setScheduleWeatherReport({ available: false, error: "Failed to fetch location weather." });
     } finally {
       setLoadingScheduleWeather(false);
@@ -163,7 +177,7 @@ export const ProducerDashboard = () => {
   useEffect(() => {
     if (location.hash) {
       const h = location.hash.replace('#', '');
-      if (['overview', 'schedules', 'finances', 'departments', 'weather'].includes(h)) {
+      if (['overview', 'screenplay', 'schedules', 'finances', 'departments', 'weather'].includes(h)) {
         setActiveTab(h);
       } else if (h === 'budget') {
         setActiveTab('finances');

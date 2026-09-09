@@ -1,4 +1,4 @@
-# Node / Frontend Dependencies
+﻿# Node / Frontend Dependencies
 node_modules/
 frontend/node_modules/
 .pnp
@@ -33,16 +33,23 @@ htmlcov/
 
 # Local Environment Variables & Secrets (CRITICAL: DO NOT COMMIT REAL KEYS)
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+*.env
 backend/.env
+backend/.env.*
 frontend/.env
+frontend/.env.*
+service_account.json
+*service_account*.json
+backend/service_account.json
+backend/*service_account*.json
+*.pem
+*.key
 
 # Local Database Scratch Data / Cache
 backend/data/firestore_store.json
 backend/data/cache/
+data/
 
 # IDE & Editor Settings
 .vscode/
@@ -55,3 +62,8 @@ Thumbs.db
 # Agent Logs & Internal Scratch
 .gemini/
 *.log
+scratch/
+backend/test_*.py
+backend/update_*.py
+backend/fix_*.py
+backend/find_*.py

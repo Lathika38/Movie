@@ -27,7 +27,8 @@ def is_user_authorized_for_movie(movie: dict, user_id: Optional[str]) -> bool:
     user_email = user_doc.get("email", "") if user_doc else ""
     user_prod_company = user_doc.get("productionCompany", "") if user_doc else ""
 
-    if user_role == "ADMIN" or user_email == "devil@movieos.ai":
+    # Studio Executive & Production Workspace Members (ADMIN, PRODUCER, DIRECTOR) collaborate on studio productions
+    if user_role in ["ADMIN", "PRODUCER", "DIRECTOR", "MUSIC_DIRECTOR"] or user_email == "devil@movieos.ai":
         return True
 
     user_name = user_doc.get("name", "").strip().lower() if user_doc else ""
