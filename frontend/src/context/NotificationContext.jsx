@@ -11,7 +11,11 @@ export const NotificationProvider = ({ children }) => {
   const [toastMessage, setToastMessage] = useState(null);
 
   const fetchNotifications = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.id) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
     try {
       const data = await notificationApi.getUserNotifications(user.id);
       setNotifications(data || []);
@@ -22,11 +26,17 @@ export const NotificationProvider = ({ children }) => {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
     fetchNotifications();
     // Poll every 10s for real-time collaborative updates across roles
     const interval = setInterval(fetchNotifications, 10000);
     return () => clearInterval(interval);
-  }, [fetchNotifications]);
+  }, [fetchNotifications, user?.id]);
+
 
   const markAsRead = async (notifId) => {
     try {

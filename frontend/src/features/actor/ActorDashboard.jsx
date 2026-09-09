@@ -31,7 +31,7 @@ import {
 
 export const ActorDashboard = () => {
   const { user, setUser } = useAuth();
-  const { activeMovie, refreshActiveMovieData } = useMovie();
+  const { activeMovie, characters, refreshActiveMovieData } = useMovie();
   const { showToast } = useNotifications();
   const location = useLocation();
 
@@ -67,7 +67,7 @@ export const ActorDashboard = () => {
     if (user?.id) {
       loadActorData();
     }
-  }, [user?.id, activeMovie?.id]);
+  }, [user?.id, activeMovie?.id, characters?.length]);
 
   const loadActorData = async () => {
     setLoading(true);
@@ -82,13 +82,33 @@ export const ActorDashboard = () => {
       if (activeMovie?.id) {
         const allScenes = await scriptApi.getScenes(activeMovie.id);
         const myAcceptedCasting = (reqs || []).filter(r => r.movieId === activeMovie.id && r.status === 'ACCEPTED');
-        const assignedRoleNames = myAcceptedCasting.map(r => r.characterName.toLowerCase());
         
-        // Map scenes with assigned indicator so actors can inspect any active production
-        const scenesWithAssignment = (allScenes || []).map(s => ({
-          ...s,
-          isAssigned: s.characters?.some(c => assignedRoleNames.includes(c.toLowerCase()) || c.toLowerCase().includes(user?.name?.toLowerCase()))
-        }));
+        // Gather all assigned character names for this actor across offers, movie members, and character bibles
+        const assignedRoleNames = new Set(myAcceptedCasting.map(r => r.characterName?.toLowerCase()).filter(Boolean));
+        
+        (activeMovie.members || []).forEach(m => {
+          if ((m.userId === user.id || m.name?.toLowerCase() === user.name?.toLowerCase()) && m.characterName) {
+            assignedRoleNames.add(m.characterName.toLowerCase());
+          }
+        });
+
+        (characters || []).forEach(c => {
+          if ((c.actorId === user.id || c.actorName?.toLowerCase() === user.name?.toLowerCase()) && c.name) {
+            assignedRoleNames.add(c.name.toLowerCase());
+          }
+        });
+
+        const roleNamesList = Array.from(assignedRoleNames);
+        
+        // Map scenes with assigned indicator so actors can inspect their calls or full production breakdown
+        const scenesWithAssignment = (allScenes || []).map(s => {
+          const isAssigned = s.characters?.some(c => 
+            roleNamesList.some(r => c.toLowerCase().includes(r) || r.includes(c.toLowerCase())) ||
+            c.toLowerCase().includes(user?.name?.toLowerCase())
+          );
+          return { ...s, isAssigned };
+        });
+
         setMyScenes(scenesWithAssignment);
       }
     } catch (e) {
@@ -122,8 +142,13 @@ export const ActorDashboard = () => {
     setCoachLoading(true);
     setCoachResponse(null);
 
+    // Resolve target character ID for the actor
     const myAcceptedCasting = (castingRequests || []).filter(r => r.movieId === activeMovie.id && r.status === 'ACCEPTED');
-    const targetCharId = myAcceptedCasting[0]?.characterId || 'CHR-001';
+    let targetChar = (characters || []).find(c => c.actorId === user.id || c.actorName?.toLowerCase() === user.name?.toLowerCase());
+    if (!targetChar && myAcceptedCasting.length > 0) {
+      targetChar = (characters || []).find(c => c.id === myAcceptedCasting[0].characterId || c.name?.toLowerCase() === myAcceptedCasting[0].characterName?.toLowerCase());
+    }
+    const targetCharId = targetChar?.id || myAcceptedCasting[0]?.characterId || (characters[0]?.id || 'CHR-001');
 
     try {
       const res = await aiApi.runActorAi(

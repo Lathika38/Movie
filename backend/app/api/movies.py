@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, Query, status, Depends
 from app.core.database import db
+from app.core.security import get_current_user, require_roles
 from app.schemas.movie import MovieCreate, MovieUpdate, MovieResponse, MovieMember
 from app.schemas.common import ApiResponse, MovieStatus
 
@@ -15,10 +16,10 @@ def is_user_authorized_for_movie(movie: dict, user_id: Optional[str]) -> bool:
     Other directors and producers cannot access or view movies they are not signed onto.
     """
     if not user_id:
-        return True
+        return False
 
     # 1. ADMIN / STUDIO CHIEF always has executive access
-    if user_id == "USR-ADMIN-001":
+    if user_id in ["USR-ADMIN-001", "USR-ADM-001", "MOVIEOS-ADMIN-001"]:
         return True
 
     user_doc = db.get_document("users", user_id)
@@ -29,10 +30,24 @@ def is_user_authorized_for_movie(movie: dict, user_id: Optional[str]) -> bool:
     if user_role == "ADMIN" or user_email == "devil@movieos.ai":
         return True
 
+    user_name = user_doc.get("name", "").strip().lower() if user_doc else ""
+
     # 2. Producer, Director, Music Director, or Creator assigned to the movie
-    is_producer = (movie.get("producerId") == user_id or (user_email and movie.get("producerEmail") == user_email))
-    is_director = (movie.get("directorId") == user_id or (user_email and movie.get("directorEmail") == user_email))
-    is_music_director = (movie.get("musicDirectorId") == user_id or (user_email and movie.get("musicDirectorEmail") == user_email))
+    is_producer = (
+        movie.get("producerId") == user_id or 
+        (user_email and movie.get("producerEmail", "").lower() == user_email) or
+        (user_name and user_role == "PRODUCER" and movie.get("producerName", "").lower() == user_name)
+    )
+    is_director = (
+        movie.get("directorId") == user_id or 
+        (user_email and movie.get("directorEmail", "").lower() == user_email) or
+        (user_name and user_role == "DIRECTOR" and movie.get("directorName", "").lower() == user_name)
+    )
+    is_music_director = (
+        movie.get("musicDirectorId") == user_id or 
+        (user_email and movie.get("musicDirectorEmail", "").lower() == user_email) or
+        (user_name and user_role == "MUSIC_DIRECTOR" and movie.get("musicDirectorName", "").lower() == user_name)
+    )
     is_creator = (movie.get("createdBy") == user_id)
 
     # 3. Check if producer's registered production company matches movie's production company
@@ -44,33 +59,61 @@ def is_user_authorized_for_movie(movie: dict, user_id: Optional[str]) -> bool:
 
     # 4. Check if user is in movie members list
     is_member = any(
-        mem.get("userId") == user_id or (user_email and mem.get("email") == user_email)
+        mem.get("userId") == user_id or 
+        (user_email and mem.get("email", "").lower() == user_email) or
+        (user_name and mem.get("name", "").lower() == user_name)
         for mem in movie.get("members", [])
     )
 
     if is_producer or is_director or is_music_director or is_creator or is_matching_production or is_member:
         return True
 
-    # 4. For ACTOR role, check if they have a casting offer (PENDING) or signed contract (ACCEPTED)
+    # 5. For ACTOR role, check casting offers, signed filmography, or assigned character records
     if user_role == "ACTOR":
+        # Check Actor's filmography
+        actor_films = user_doc.get("filmography", []) if user_doc else []
+        if any(f.get("movieId") == movie.get("id") for f in actor_films):
+            return True
+
+        # Check casting offers
         movie_offers = db.query_collection("castingRequests", filters=[("movieId", "==", movie.get("id"))])
         has_offer_or_signed = any(
-            (req.get("actorId") == user_id or (user_email and req.get("actorEmail") == user_email)) and
+            (req.get("actorId") == user_id or 
+             (user_email and (req.get("actorEmail") or "").lower() == user_email) or
+             (user_name and (req.get("actorName") or "").lower() == user_name)) and
             req.get("status") in ["PENDING", "ACCEPTED"]
             for req in movie_offers
         )
         if has_offer_or_signed:
             return True
 
+        # Check assigned characters in this movie
+        chars = db.query_collection("characters", filters=[("movieId", "==", movie.get("id"))])
+        is_assigned_char = any(
+            c.get("actorId") == user_id or 
+            (user_name and (c.get("actorName") or "").lower() == user_name)
+            for c in chars
+        )
+        if is_assigned_char:
+            return True
+
     # User is not authorized to access this movie project
     return False
+
 
 @router.get("", response_model=ApiResponse[List[MovieResponse]])
 def list_movies(
     user_id: Optional[str] = None,
     role: Optional[str] = None,
-    status_filter: Optional[MovieStatus] = None
+    status_filter: Optional[MovieStatus] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
 ):
+    effective_user_id = user_id
+    if current_user and not (current_user.get("role") == "ADMIN" or current_user.get("is_admin_claim")):
+        effective_user_id = current_user.get("id")
+    elif not effective_user_id and current_user:
+        effective_user_id = current_user.get("id")
+
     movies = db.query_collection("movies", order_by="createdAt", descending=True)
     
     # Enrich names and scene stats
@@ -79,7 +122,7 @@ def list_movies(
         m_id = m.get("id")
         
         # Strict Production Access Control: Only Creator / Signed Director & Producer can view!
-        if user_id and not is_user_authorized_for_movie(m, user_id):
+        if effective_user_id and not is_user_authorized_for_movie(m, effective_user_id):
             continue
 
         # Producer & Director names
@@ -112,8 +155,12 @@ def list_movies(
 
     return ApiResponse(success=True, data=enriched)
 
+
 @router.post("", response_model=ApiResponse[MovieResponse])
-def create_movie(payload: MovieCreate):
+def create_movie(
+    payload: MovieCreate,
+    current_user: Dict[str, Any] = Depends(require_roles(["DIRECTOR", "PRODUCER", "ADMIN"]))
+):
     movie_id = str(uuid.uuid4())
     data = payload.model_dump()
     data["id"] = movie_id
@@ -121,21 +168,27 @@ def create_movie(payload: MovieCreate):
     data["updatedAt"] = datetime.now(timezone.utc).isoformat()
     data["members"] = []
 
-    # If createdBy provided, record creator member
-    if payload.createdBy:
-        data["createdBy"] = payload.createdBy
-        creator = db.get_document("users", payload.createdBy)
-        if creator:
-            c_role = creator.get("role", "CREATOR")
-            data["members"].append({
-                "userId": payload.createdBy,
-                "name": creator.get("name", "Creator"),
-                "role": c_role,
-                "joinedAt": datetime.now(timezone.utc).isoformat()
-            })
+    creator_id = current_user.get("id")
+    creator_role = current_user.get("role", "DIRECTOR")
+    data["createdBy"] = payload.createdBy or creator_id
 
-    # If producer created, add as member
-    if payload.producerId:
+    # Add creator as member
+    if creator_id:
+        data["members"].append({
+            "userId": creator_id,
+            "name": current_user.get("name", "Creator"),
+            "role": creator_role,
+            "joinedAt": datetime.now(timezone.utc).isoformat()
+        })
+        if creator_role == "DIRECTOR" and not data.get("directorId"):
+            data["directorId"] = creator_id
+            data["directorName"] = current_user.get("name")
+        elif creator_role == "PRODUCER" and not data.get("producerId"):
+            data["producerId"] = creator_id
+            data["producerName"] = current_user.get("name")
+
+    # If producer created, add as member if not present
+    if payload.producerId and payload.producerId != creator_id:
         p = db.get_document("users", payload.producerId)
         if p:
             data["producerName"] = p.get("name")
@@ -147,8 +200,8 @@ def create_movie(payload: MovieCreate):
                     "joinedAt": datetime.now(timezone.utc).isoformat()
                 })
 
-    # If director assigned, add as member
-    if payload.directorId:
+    # If director assigned, add as member if not present
+    if payload.directorId and payload.directorId != creator_id:
         d = db.get_document("users", payload.directorId)
         if d:
             data["directorName"] = d.get("name")
@@ -163,13 +216,24 @@ def create_movie(payload: MovieCreate):
     created = db.set_document("movies", movie_id, data)
     return ApiResponse(success=True, message=f"Movie '{payload.title}' created successfully.", data=MovieResponse(**created))
 
+
 @router.get("/{movie_id}", response_model=ApiResponse[MovieResponse])
-def get_movie_details(movie_id: str, user_id: Optional[str] = None):
+def get_movie_details(
+    movie_id: str,
+    user_id: Optional[str] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+):
     movie = db.get_document("movies", movie_id)
     if not movie:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
 
-    if user_id and not is_user_authorized_for_movie(movie, user_id):
+    effective_user_id = user_id
+    if current_user and not (current_user.get("role") == "ADMIN" or current_user.get("is_admin_claim")):
+        effective_user_id = current_user.get("id")
+    elif not effective_user_id and current_user:
+        effective_user_id = current_user.get("id")
+
+    if not is_user_authorized_for_movie(movie, effective_user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted: Only the signed Director, Producer, and authorized crew members can access this movie project."
@@ -196,13 +260,25 @@ def get_movie_details(movie_id: str, user_id: Optional[str] = None):
 
     return ApiResponse(success=True, data=MovieResponse(**movie))
 
+
 @router.put("/{movie_id}", response_model=ApiResponse[MovieResponse])
-def update_movie(movie_id: str, updates: MovieUpdate, user_id: Optional[str] = None):
+def update_movie(
+    movie_id: str,
+    updates: MovieUpdate,
+    user_id: Optional[str] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+):
     movie = db.get_document("movies", movie_id)
     if not movie:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
 
-    if user_id and not is_user_authorized_for_movie(movie, user_id):
+    effective_user_id = user_id
+    if current_user and not (current_user.get("role") == "ADMIN" or current_user.get("is_admin_claim")):
+        effective_user_id = current_user.get("id")
+    elif not effective_user_id and current_user:
+        effective_user_id = current_user.get("id")
+
+    if not is_user_authorized_for_movie(movie, effective_user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted: Only the signed Director, Producer, and authorized crew members can update this movie project."
@@ -242,13 +318,24 @@ def update_movie(movie_id: str, updates: MovieUpdate, user_id: Optional[str] = N
     updated = db.update_document("movies", movie_id, update_dict)
     return ApiResponse(success=True, message="Movie updated successfully.", data=MovieResponse(**updated))
 
+
 @router.delete("/{movie_id}", response_model=ApiResponse[bool])
-def delete_movie(movie_id: str, user_id: Optional[str] = None):
+def delete_movie(
+    movie_id: str,
+    user_id: Optional[str] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+):
     movie = db.get_document("movies", movie_id)
     if not movie:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
 
-    if user_id and not is_user_authorized_for_movie(movie, user_id):
+    effective_user_id = user_id
+    if current_user and not (current_user.get("role") == "ADMIN" or current_user.get("is_admin_claim")):
+        effective_user_id = current_user.get("id")
+    elif not effective_user_id and current_user:
+        effective_user_id = current_user.get("id")
+
+    if not is_user_authorized_for_movie(movie, effective_user_id):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Access restricted: Only the signed Director, Producer, and authorized crew members can delete this movie project."
@@ -258,3 +345,4 @@ def delete_movie(movie_id: str, user_id: Optional[str] = None):
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
     return ApiResponse(success=True, message="Movie deleted successfully.", data=True)
+

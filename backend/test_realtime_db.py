@@ -5,12 +5,13 @@ from app.main import app
 from app.core.database import db
 
 client = TestClient(app)
+AUTH_HEADERS = {"Authorization": "Bearer USR-ADM-001"}
 
 def test_realtime_database_persistence():
     print("--- Testing Real-Time Backend Database Persistence ---")
 
     # 1. Fetch movies from API
-    res = client.get("/api/movies")
+    res = client.get("/api/movies", headers=AUTH_HEADERS)
     assert res.status_code == 200
     movies = res.json()["data"]
     assert len(movies) > 0
@@ -28,7 +29,7 @@ def test_realtime_database_persistence():
         "approvedBy": "Test Producer"
     }
 
-    res_exp = client.post("/api/producer/expenses", json=expense_data)
+    res_exp = client.post("/api/producer/expenses", json=expense_data, headers=AUTH_HEADERS)
     assert res_exp.status_code == 200
     created_expense = res_exp.json()["data"]
     exp_id = created_expense["id"]
@@ -42,7 +43,7 @@ def test_realtime_database_persistence():
     print(" PASS: Document is persisted in database layer immediately in real time!")
 
     # 4. Fetch budget breakdown via API and verify updated spent budget
-    res_budget = client.get(f"/api/producer/budget-breakdown/{movie_id}")
+    res_budget = client.get(f"/api/producer/budget-breakdown/{movie_id}", headers=AUTH_HEADERS)
     assert res_budget.status_code == 200
     budget_data = res_budget.json()["data"]
     cat_spent = next((c["spent"] for c in budget_data["categories"] if c["category"] == "Production & Camera"), 0)
@@ -58,3 +59,4 @@ def test_realtime_database_persistence():
 
 if __name__ == "__main__":
     test_realtime_database_persistence()
+

@@ -1,21 +1,36 @@
 import uuid
 import io
 from datetime import datetime, timezone
-from typing import List, Optional
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile, status, Depends
 from pypdf import PdfReader
 from app.core.database import db
+from app.core.security import get_current_user
+from app.api.movies import is_user_authorized_for_movie
 from app.agents.gemini_service import gemini_service
 from app.schemas.script import SceneSchema, CharacterSchema, ScriptAnalysisResponse, ScriptUploadRequest
 from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/scripts", tags=["Screenplay & Script Intelligence"])
 
-@router.post("/analyze-text", response_model=ApiResponse[ScriptAnalysisResponse])
-def analyze_script_text(payload: ScriptUploadRequest):
-    movie = db.get_document("movies", payload.movieId)
+def _check_script_movie_access(movie_id: str, user: Optional[Dict[str, Any]]):
+    movie = db.get_document("movies", movie_id)
     if not movie:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+    user_id = user.get("id") if user else None
+    if not is_user_authorized_for_movie(movie, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted: Only authorized production workspace members can access or modify screenplay data."
+        )
+    return movie
+
+@router.post("/analyze-text", response_model=ApiResponse[ScriptAnalysisResponse])
+def analyze_script_text(
+    payload: ScriptUploadRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_script_movie_access(payload.movieId, current_user)
 
     analysis = gemini_service.analyze_screenplay(
         movie_id=payload.movieId,
@@ -87,11 +102,10 @@ def analyze_script_text(payload: ScriptUploadRequest):
 @router.post("/upload-file", response_model=ApiResponse[ScriptAnalysisResponse])
 async def upload_script_file(
     movieId: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    current_user: Dict[str, Any] = Depends(get_current_user)
 ):
-    movie = db.get_document("movies", movieId)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+    movie = _check_script_movie_access(movieId, current_user)
 
     contents = await file.read()
     script_text = ""
@@ -115,7 +129,7 @@ async def upload_script_file(
     if not script_text.strip():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty or text could not be extracted.")
 
-    return analyze_script_text(ScriptUploadRequest(movieId=movieId, scriptContent=script_text, version=file.filename))
+    return analyze_script_text(ScriptUploadRequest(movieId=movieId, scriptContent=script_text, version=file.filename), current_user=current_user)
 
 @router.get("/scenes/{movie_id}", response_model=ApiResponse[List[SceneSchema]])
 def get_movie_scenes(
@@ -123,33 +137,21 @@ def get_movie_scenes(
     user_id: Optional[str] = None,
     character_name: Optional[str] = None,
     setting: Optional[str] = None,
-    time_of_day: Optional[str] = None
+    time_of_day: Optional[str] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
 ):
     movie = db.get_document("movies", movie_id)
     if not movie:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
 
-    if user_id:
-        user_doc = db.get_document("users", user_id)
-        user_role = user_doc.get("role") if user_doc else None
-        user_email = user_doc.get("email") if user_doc else None
-        
-        # ACTOR role restriction: Actors can only view screenplay scenes if signed or have a pending casting offer
-        if user_role == "ACTOR":
-            is_creator_or_member = (
-                movie.get("producerId") == user_id or
-                movie.get("directorId") == user_id or
-                movie.get("musicDirectorId") == user_id or
-                any(mem.get("userId") == user_id for mem in movie.get("members", []))
-            )
-            movie_offers = db.query_collection("castingRequests", filters=[("movieId", "==", movie_id)])
-            has_offer_or_signed = any(
-                (req.get("actorId") == user_id or (user_email and req.get("actorEmail") == user_email)) and
-                req.get("status") in ["PENDING", "ACCEPTED"]
-                for req in movie_offers
-            )
-            if not (is_creator_or_member or has_offer_or_signed):
-                return ApiResponse(success=True, message="Access Restricted: You must be signed to this project or have an active casting offer to view screenplay scenes.", data=[])
+    eff_user_id = user_id
+    if current_user and not (current_user.get("role") == "ADMIN" or current_user.get("is_admin_claim")):
+        eff_user_id = current_user.get("id")
+    elif not eff_user_id and current_user:
+        eff_user_id = current_user.get("id")
+
+    if not eff_user_id or not is_user_authorized_for_movie(movie, eff_user_id):
+        return ApiResponse(success=True, message="Access Restricted: You must be an authorized member of this movie project.", data=[])
 
     scenes = db.query_collection("scenes", filters=[("movieId", "==", movie_id)], order_by="sceneNumber")
     if character_name:
@@ -162,39 +164,38 @@ def get_movie_scenes(
     return ApiResponse(success=True, data=[SceneSchema(**s) for s in scenes])
 
 @router.get("/characters/{movie_id}", response_model=ApiResponse[List[CharacterSchema]])
-def get_movie_characters(movie_id: str, user_id: Optional[str] = None):
+def get_movie_characters(
+    movie_id: str,
+    user_id: Optional[str] = None,
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+):
     movie = db.get_document("movies", movie_id)
     if not movie:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
 
-    if user_id:
-        user_doc = db.get_document("users", user_id)
-        user_role = user_doc.get("role") if user_doc else None
-        user_email = user_doc.get("email") if user_doc else None
-        
-        # ACTOR role restriction: Actors can only view character breakdowns if signed or have a pending casting offer
-        if user_role == "ACTOR":
-            is_creator_or_member = (
-                movie.get("producerId") == user_id or
-                movie.get("directorId") == user_id or
-                movie.get("musicDirectorId") == user_id or
-                any(mem.get("userId") == user_id for mem in movie.get("members", []))
-            )
-            movie_offers = db.query_collection("castingRequests", filters=[("movieId", "==", movie_id)])
-            has_offer_or_signed = any(
-                (req.get("actorId") == user_id or (user_email and req.get("actorEmail") == user_email)) and
-                req.get("status") in ["PENDING", "ACCEPTED"]
-                for req in movie_offers
-            )
-            if not (is_creator_or_member or has_offer_or_signed):
-                return ApiResponse(success=True, message="Access Restricted: You must be signed to this project or have an active casting offer.", data=[])
+    eff_user_id = user_id
+    if current_user and not (current_user.get("role") == "ADMIN" or current_user.get("is_admin_claim")):
+        eff_user_id = current_user.get("id")
+    elif not eff_user_id and current_user:
+        eff_user_id = current_user.get("id")
+
+    if not eff_user_id or not is_user_authorized_for_movie(movie, eff_user_id):
+        return ApiResponse(success=True, message="Access Restricted: You must be an authorized member of this movie project.", data=[])
 
     characters = db.query_collection("characters", filters=[("movieId", "==", movie_id)])
     return ApiResponse(success=True, data=[CharacterSchema(**c) for c in characters])
 
 @router.put("/scenes/{scene_id}", response_model=ApiResponse[SceneSchema])
-def update_scene(scene_id: str, updates: dict):
-    updated = db.update_document("scenes", scene_id, updates)
-    if not updated:
+def update_scene(
+    scene_id: str,
+    updates: dict,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    scene = db.get_document("scenes", scene_id)
+    if not scene:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scene not found.")
+    _check_script_movie_access(scene.get("movieId"), current_user)
+
+    updated = db.update_document("scenes", scene_id, updates)
     return ApiResponse(success=True, message="Scene updated.", data=SceneSchema(**updated))
+

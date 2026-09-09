@@ -49,6 +49,7 @@ async def get_current_user(
         }
 
     # Attach decoded claims info
+    user["id"] = user.get("id") or uid
     user["is_admin_claim"] = bool(decoded.get("admin") or uid == settings.MOVIEOS_ADMIN_UID or user.get("role") == "ADMIN")
     return user
 
@@ -77,3 +78,29 @@ async def require_admin(
         )
 
     return current_user
+
+
+def require_roles(allowed_roles: list[str]):
+    """
+    Dependency factory that checks if current_user role is in allowed_roles.
+    """
+    async def role_checker(current_user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+        user_role = str(current_user.get("role", "")).upper()
+        uid = current_user.get("id") or current_user.get("uid")
+        is_admin = (
+            uid in [settings.MOVIEOS_ADMIN_UID, "USR-ADMIN-001", "USR-ADM-001", "MOVIEOS-ADMIN-001"] or
+            user_role == "ADMIN" or
+            current_user.get("is_admin_claim")
+        )
+        if is_admin:
+            return current_user
+        
+        allowed_upper = [r.upper() for r in allowed_roles]
+        if user_role not in allowed_upper:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access Denied: Role '{user_role}' is not authorized for this operation. Required role(s): {', '.join(allowed_roles)}."
+            )
+        return current_user
+    return role_checker
+

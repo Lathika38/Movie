@@ -109,6 +109,7 @@ export const DirectorDashboard = () => {
   // Casting modal state
   const [isCastingModalOpen, setIsCastingModalOpen] = useState(false);
   const [preselectedChar, setPreselectedChar] = useState(null);
+  const [preselectedActor, setPreselectedActor] = useState(null);
   const [castingRequests, setCastingRequests] = useState([]);
 
   // Music tracks state
@@ -117,12 +118,49 @@ export const DirectorDashboard = () => {
   const [reviewFeedback, setReviewFeedback] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
 
+  // Casting & Script Analysis State
+  const [scriptMatches, setScriptMatches] = useState([]);
+  const [loadingScriptMatches, setLoadingScriptMatches] = useState(false);
+
   useEffect(() => {
     if (activeMovie?.id) {
       castingApi.getMovieCastingRequests(activeMovie.id).then(setCastingRequests).catch(() => { });
       musicApi.getTracks(activeMovie.id).then(setMusicTracks).catch(() => { });
+      if (activeTab === 'casting') {
+        fetchScriptCastingAnalysis();
+      }
     }
-  }, [activeMovie?.id]);
+  }, [activeMovie?.id, activeTab]);
+
+  const fetchScriptCastingAnalysis = async () => {
+    if (!activeMovie?.id) return;
+    setLoadingScriptMatches(true);
+    try {
+      const res = await castingApi.getScriptCharacterMatches(activeMovie.id);
+      setScriptMatches(res || []);
+    } catch (err) {
+      console.error("Script casting analysis error:", err);
+    } finally {
+      setLoadingScriptMatches(false);
+    }
+  };
+
+  const handleDirectAssign = async (characterId, actorName, actorId) => {
+    if (!activeMovie?.id) return;
+    try {
+      await castingApi.assignDirect({
+        movieId: activeMovie.id,
+        characterId,
+        actorName,
+        actorId
+      });
+      showToast(`🎬 ${actorName} locked to role based on script breakdown!`, "success");
+      await refreshActiveMovieData();
+      fetchScriptCastingAnalysis();
+    } catch (err) {
+      alert(`Assignment error: ${err.message}`);
+    }
+  };
 
   const handleScriptUpload = async (e) => {
     e.preventDefault();
@@ -498,38 +536,37 @@ export const DirectorDashboard = () => {
       {/* 3. TAB: CASTING DISPATCH */}
       {activeTab === 'casting' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between cinema-glass p-4 rounded-2xl border border-slate-800">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 cinema-glass p-5 rounded-2xl border border-slate-800">
             <div>
-              <h3 className="text-sm font-bold text-slate-100">Production Cast & Talent Roster</h3>
-              <p className="text-xs text-slate-400">Manage character assignments and dispatch live casting contracts</p>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-100">Screenplay-Driven Casting Dispatch & Assignment</h3>
+                <span className="text-[10px] font-bold text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded border border-cyan-500/20">
+                  Google Search Engine Grounded
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
+                AI analyzes character arcs, age, dialogue tone & scenes to match real-world actors for instant dispatch or direct assignment.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
               <button
-                onClick={async () => {
-                  try {
-                    const users = await authApi.getUsers();
-                    setTalentList(users || []);
-                    if (users && users.length > 0) {
-                      const actor = users.find(u => u.role === 'ACTOR') || users[0];
-                      setSelectedTalentForProfile(actor);
-                      setIsTalentModalOpen(true);
-                    }
-                  } catch (e) {}
-                }}
-                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-amber-500/50 text-slate-200 hover:text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer"
+                onClick={fetchScriptCastingAnalysis}
+                disabled={loadingScriptMatches}
+                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-cyan-500/50 text-slate-200 hover:text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
               >
-                <UserCheck className="w-3.5 h-3.5 text-amber-400" />
-                Browse Talent Roster & Profiles
+                <Sparkles className={`w-3.5 h-3.5 text-cyan-400 ${loadingScriptMatches ? 'animate-spin' : ''}`} />
+                {loadingScriptMatches ? 'Analyzing Script...' : 'Re-Analyze Script for Casting'}
               </button>
               <button
                 onClick={() => {
                   setPreselectedChar(null);
+                  setPreselectedActor(null);
                   setIsCastingModalOpen(true);
                 }}
                 className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md shadow-amber-500/20"
               >
                 <Send className="w-3.5 h-3.5" />
-                Dispatch Casting Offer
+                Dispatch Offer
               </button>
             </div>
           </div>
@@ -547,48 +584,140 @@ export const DirectorDashboard = () => {
               {characters.map((char) => {
                 const isCast = char.castingStatus === 'CAST';
                 const isPending = char.castingStatus === 'PENDING';
+                const matchData = scriptMatches.find(
+                  m => m.characterId === char.id || m.characterName?.toLowerCase() === char.name?.toLowerCase()
+                );
+                const suggestedList = matchData?.suggestedActors || [];
+
                 return (
                   <div
                     key={char.id}
-                    className="cinema-glass rounded-2xl p-6 border border-slate-800 hover:border-amber-500/30 transition-all flex flex-col justify-between"
+                    className="cinema-glass rounded-2xl p-5 border border-slate-800 hover:border-amber-500/30 transition-all flex flex-col justify-between space-y-4"
                   >
                     <div>
-                      <div className="flex items-center justify-between mb-3">
+                      {/* Character Header */}
+                      <div className="flex items-center justify-between mb-2">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/20">
-                          {char.roleType}
+                          {matchData?.archetype || char.roleType}
                         </span>
                         <span
-                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded ${isCast
+                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded ${
+                            isCast
                               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                               : isPending
                                 ? 'bg-amber-500/10 text-amber-300 border border-amber-500/20 animate-pulse'
                                 : 'bg-slate-800 text-slate-400'
-                            }`}
+                          }`}
                         >
                           {char.castingStatus}
                         </span>
                       </div>
 
-                      <h4 className="text-base font-bold text-slate-100 font-['Outfit']">{char.name}</h4>
-                      <p className="text-xs text-slate-400 mt-1.5 leading-relaxed line-clamp-3">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <h4 className="text-base font-bold text-slate-100 font-['Outfit']">{char.name}</h4>
+                        {char.age && (
+                          <span className="text-[11px] text-slate-400 font-mono">Age: {char.age}</span>
+                        )}
+                      </div>
+
+                      <p className="text-xs text-slate-400 mt-1 leading-relaxed line-clamp-2">
                         {char.description}
                       </p>
 
-                      {/* Assigned Actor Display */}
-                      <div className="mt-4 p-3 rounded-xl bg-slate-900/80 border border-slate-800">
-                        <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Assigned Talent</p>
-                        {char.actorName ? (
-                          <p className="text-xs font-bold text-amber-300 mt-0.5 flex items-center gap-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            {char.actorName}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic mt-0.5">Unassigned — No actor cast yet</p>
+                      {char.emotionalArc && (
+                        <p className="text-[11px] text-cyan-300/80 italic mt-1.5 line-clamp-2 bg-slate-950/60 p-2 rounded-lg border border-slate-800/80">
+                          Arc: {char.emotionalArc}
+                        </p>
+                      )}
+
+                      {/* Current Assigned Actor */}
+                      <div className="mt-3 p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold uppercase text-slate-400 tracking-wider">Cast Talent</p>
+                          {char.actorName ? (
+                            <p className="text-xs font-bold text-amber-300 mt-0.5 flex items-center gap-1.5">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              {char.actorName}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic mt-0.5">Unassigned — No actor cast yet</p>
+                          )}
+                        </div>
+                        {isCast && (
+                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                            LOCKED
+                          </span>
                         )}
                       </div>
+
+                      {/* AI Script-Matched Suggestions Panel */}
+                      {!isCast && suggestedList.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-slate-800 space-y-2.5">
+                          <div className="flex items-center justify-between text-[11px] font-bold text-slate-300">
+                            <span className="flex items-center gap-1 text-cyan-400">
+                              <Sparkles className="w-3 h-3" /> Script-Matched Cast (Live Search)
+                            </span>
+                          </div>
+
+                          <div className="space-y-2">
+                            {suggestedList.slice(0, 2).map((sug, sIdx) => (
+                              <div
+                                key={sIdx}
+                                className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 flex items-center justify-between gap-2 hover:border-cyan-500/30 transition-all"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  {sug.imageUrl ? (
+                                    <img
+                                      src={sug.imageUrl}
+                                      alt={sug.actorName}
+                                      className="w-9 h-9 rounded-lg object-cover border border-slate-700 shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500 shrink-0 text-xs">
+                                      {sug.actorName?.slice(0, 1)}
+                                    </div>
+                                  )}
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-xs font-bold text-slate-100 truncate">{sug.actorName}</p>
+                                      {sug.suitabilityScore && (
+                                        <span className="text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded">
+                                          {sug.suitabilityScore}%
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 truncate mt-0.5">{sug.pastWork}</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={() => handleDirectAssign(char.id, sug.actorName)}
+                                    title="Assign directly to character"
+                                    className="px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-slate-950 text-[10px] font-bold transition-all cursor-pointer border border-emerald-500/30"
+                                  >
+                                    Assign
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      setPreselectedChar(char);
+                                      setPreselectedActor(sug);
+                                      setIsCastingModalOpen(true);
+                                    }}
+                                    title="Dispatch formal contract offer"
+                                    className="px-2 py-1 rounded bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 text-[10px] font-bold transition-all cursor-pointer border border-amber-500/30"
+                                  >
+                                    Offer
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="pt-4 border-t border-slate-800/80 mt-4 flex items-center justify-between">
+                    <div className="pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs">
                       <span className="text-[10px] text-slate-400">
                         Appears in {char.sceneCount || char.scenesAppearedIn?.length || 0} scenes
                       </span>
@@ -596,11 +725,13 @@ export const DirectorDashboard = () => {
                         <button
                           onClick={() => {
                             setPreselectedChar(char);
+                            setPreselectedActor(null);
                             setIsCastingModalOpen(true);
                           }}
-                          className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-bold text-xs transition-all cursor-pointer border border-amber-500/30"
+                          className="px-3 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-bold text-xs transition-all cursor-pointer border border-amber-500/30 flex items-center gap-1"
                         >
-                          Offer Role
+                          <Send className="w-3 h-3" />
+                          Custom Offer
                         </button>
                       )}
                     </div>
@@ -788,8 +919,13 @@ export const DirectorDashboard = () => {
       {/* Casting Modal */}
       <CastingRequestModal
         isOpen={isCastingModalOpen}
-        onClose={() => setIsCastingModalOpen(false)}
+        onClose={() => {
+          setIsCastingModalOpen(false);
+          setPreselectedActor(null);
+          setPreselectedChar(null);
+        }}
         preselectedCharacter={preselectedChar}
+        preselectedActor={preselectedActor}
       />
 
       {/* Edit Scene Breakdown Modal */}
@@ -807,6 +943,7 @@ export const DirectorDashboard = () => {
         talent={selectedTalentForProfile}
         onDispatchOffer={(talentItem) => {
           setPreselectedChar(null);
+          setPreselectedActor(talentItem);
           setIsCastingModalOpen(true);
         }}
       />
@@ -831,8 +968,14 @@ export const DirectorDashboard = () => {
         initialTab={aiModalInitialTab}
         movieId={activeMovie?.id}
         movieTitle={activeMovie?.title}
-        onDispatchCasting={(actor) => {
-          setPreselectedChar(null);
+        onDispatchCasting={(actor, roleGroup) => {
+          setPreselectedActor(actor);
+          if (roleGroup?.characterName) {
+            const matchedC = characters.find(c => c.name?.toLowerCase() === roleGroup.characterName?.toLowerCase());
+            setPreselectedChar(matchedC || { name: roleGroup.characterName, description: roleGroup.requiredTraits || roleGroup.function });
+          } else {
+            setPreselectedChar(null);
+          }
           setIsCastingModalOpen(true);
         }}
       />

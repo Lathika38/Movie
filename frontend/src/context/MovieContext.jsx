@@ -15,34 +15,66 @@ export const MovieProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const clearMovieState = useCallback(() => {
+    setMovies([]);
+    setActiveMovieId(null);
+    setActiveMovie(null);
+    setScenes([]);
+    setCharacters([]);
+    setLoading(false);
+    setError(null);
+  }, []);
+
   const fetchMovies = useCallback(async () => {
+    if (!user?.id) {
+      clearMovieState();
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await movieApi.getMovies(user?.id, user?.role);
-      setMovies(data || []);
+      const data = await movieApi.getMovies(user.id, user.role);
+      const userMovies = data || [];
+      setMovies(userMovies);
       
-      // Auto-select first movie if none selected or if active one no longer exists
-      if (data && data.length > 0) {
-        if (!activeMovieId || !data.some(m => m.id === activeMovieId)) {
-          setActiveMovieId(data[0].id);
-        }
+      // Auto-select first movie if none selected or if active one no longer exists for this user
+      if (userMovies.length > 0) {
+        setActiveMovieId(prevId => {
+          if (prevId && userMovies.some(m => m.id === prevId)) {
+            return prevId;
+          }
+          return userMovies[0].id;
+        });
       } else {
         setActiveMovieId(null);
         setActiveMovie(null);
+        setScenes([]);
+        setCharacters([]);
       }
     } catch (err) {
       console.error('[MovieContext] Failed to load movies:', err);
       setError(err.message || 'Failed to load productions.');
+      setMovies([]);
+      setActiveMovieId(null);
+      setActiveMovie(null);
     } finally {
       setLoading(false);
     }
-  }, [user?.id, user?.role, activeMovieId]);
+  }, [user?.id, user?.role, clearMovieState]);
 
-  // Initial fetch and refetch on user context change
+  // Handle user session changes cleanly
   useEffect(() => {
-    fetchMovies();
-  }, [fetchMovies, user?.id]);
+    if (!user?.id) {
+      clearMovieState();
+    } else {
+      // Immediately reset movie selection on user change to prevent stale cross-user leaks
+      setActiveMovieId(null);
+      setActiveMovie(null);
+      setScenes([]);
+      setCharacters([]);
+      fetchMovies();
+    }
+  }, [user?.id, clearMovieState, fetchMovies]);
 
   // Sync activeMovie object when activeMovieId changes
   useEffect(() => {
@@ -53,6 +85,10 @@ export const MovieProvider = ({ children }) => {
         // Load scenes and characters for active movie
         scriptApi.getScenes(activeMovieId).then(setScenes).catch(() => setScenes([]));
         scriptApi.getCharacters(activeMovieId).then(setCharacters).catch(() => setCharacters([]));
+      } else {
+        setActiveMovie(null);
+        setScenes([]);
+        setCharacters([]);
       }
     } else {
       setActiveMovie(null);
@@ -60,6 +96,7 @@ export const MovieProvider = ({ children }) => {
       setCharacters([]);
     }
   }, [activeMovieId, movies]);
+
 
   const refreshActiveMovieData = async () => {
     if (!activeMovieId) return;

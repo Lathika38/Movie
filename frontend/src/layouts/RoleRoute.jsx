@@ -8,7 +8,7 @@ export const RoleRoute = ({ allowedRoles = [] }) => {
   const location = useLocation();
 
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/" state={{ from: location }} replace />;
   }
 
   // Strict Role-Based Access Control

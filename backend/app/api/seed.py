@@ -1,12 +1,14 @@
-from fastapi import APIRouter
+from typing import Dict, Any
+from fastapi import APIRouter, Depends
 from seed_data import seed_database
 from app.core.database import db
+from app.core.security import require_admin
 from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/seed", tags=["Database Seeding & Reset"])
 
 @router.post("", response_model=ApiResponse[dict])
-def trigger_database_seed():
+def trigger_database_seed(admin_user: Dict[str, Any] = Depends(require_admin)):
     seed_database()
     return ApiResponse(
         success=True,
@@ -22,7 +24,8 @@ def trigger_database_seed():
     )
 
 @router.post("/reset", response_model=ApiResponse[bool])
-def reset_database():
+def reset_database(admin_user: Dict[str, Any] = Depends(require_admin)):
     db.clear_all()
     seed_database()
     return ApiResponse(success=True, message="Database reset and re-seeded with pristine cinema data.", data=True)
+

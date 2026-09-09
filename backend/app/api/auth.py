@@ -66,20 +66,63 @@ def login_user(payload: UserLogin):
 def get_user_profile(user_id: str):
     user = db.get_document("users", user_id)
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found.")
+        # Search by uid attribute or check if any record matches
+        by_uid = db.query_collection("users", filters=[("uid", "==", user_id)])
+        if by_uid:
+            user = by_uid[0]
+        else:
+            # Auto-provision profile for Firebase Auth authenticated user
+            user = {
+                "id": user_id,
+                "email": f"user.{user_id[:8].lower()}@movieos.cinema",
+                "name": "Cinema Creator",
+                "role": "DIRECTOR",
+                "bio": "Cinema production creator on MovieOS platform.",
+                "status": "Active",
+                "filmography": [],
+                "skills": ["Screen Direction", "Cinema Production"],
+                "genres": ["Drama", "Sci-Fi", "Thriller"],
+                "createdAt": datetime.now(timezone.utc).isoformat(),
+                "updatedAt": datetime.now(timezone.utc).isoformat()
+            }
+            db.set_document("users", user_id, user)
+
     return ApiResponse(success=True, data=UserResponse(**user))
 
 @router.put("/profile/{user_id}", response_model=ApiResponse[UserResponse])
 def update_user_profile(user_id: str, updates: UserProfileUpdate):
     user = db.get_document("users", user_id)
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found.")
-    
     update_dict = {k: v for k, v in updates.model_dump().items() if v is not None}
     
     # Protect role escalation from self-update
     if "role" in update_dict:
         del update_dict["role"]
+
+    if not user:
+        # Search if document exists with uid == user_id
+        by_uid = db.query_collection("users", filters=[("uid", "==", user_id)])
+        if by_uid:
+            target_id = by_uid[0].get("id", user_id)
+            updated = db.update_document("users", target_id, update_dict)
+            return ApiResponse(success=True, message="Profile updated successfully.", data=UserResponse(**updated))
+
+        # Auto-upsert new profile for this authenticated Firebase user
+        user_data = {
+            "id": user_id,
+            "email": f"user.{user_id[:8].lower()}@movieos.cinema",
+            "name": update_dict.get("name", "Cinema Creator"),
+            "role": "DIRECTOR",
+            "bio": update_dict.get("bio", "Cinema production creator on MovieOS platform."),
+            "status": "Active",
+            "filmography": [],
+            "skills": update_dict.get("skills", ["Screen Direction", "Cinema Production"]),
+            "genres": update_dict.get("genres", ["Drama", "Sci-Fi"]),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "updatedAt": datetime.now(timezone.utc).isoformat(),
+            **update_dict
+        }
+        created = db.set_document("users", user_id, user_data)
+        return ApiResponse(success=True, message="Profile created and updated successfully.", data=UserResponse(**created))
 
     updated = db.update_document("users", user_id, update_dict)
     return ApiResponse(success=True, message="Profile updated successfully.", data=UserResponse(**updated))

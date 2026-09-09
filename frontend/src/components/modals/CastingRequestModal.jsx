@@ -6,7 +6,7 @@ import { authApi } from '../../api/authApi';
 import { castingApi } from '../../api/castingApi';
 import { X, Send, UserCheck, Sparkles, DollarSign, Calendar, MapPin } from 'lucide-react';
 
-export const CastingRequestModal = ({ isOpen, onClose, preselectedCharacter }) => {
+export const CastingRequestModal = ({ isOpen, onClose, preselectedCharacter, preselectedActor }) => {
   const { user } = useAuth();
   const { activeMovie, characters, refreshActiveMovieData } = useMovie();
   const { showToast } = useNotifications();
@@ -26,7 +26,15 @@ export const CastingRequestModal = ({ isOpen, onClose, preselectedCharacter }) =
     if (isOpen) {
       authApi.getActors().then(data => {
         setActors(data || []);
-        if (data && data.length > 0 && !selectedActorId) {
+        if (preselectedActor) {
+          const actName = preselectedActor.actorName || preselectedActor.name;
+          const matched = (data || []).find(a => a.name.toLowerCase() === actName?.toLowerCase());
+          if (matched) {
+            setSelectedActorId(matched.id);
+          } else if (actName) {
+            setSelectedActorId(actName);
+          }
+        } else if (data && data.length > 0 && !selectedActorId) {
           setSelectedActorId(data[0].id);
         }
       }).catch(console.error);
@@ -38,7 +46,7 @@ export const CastingRequestModal = ({ isOpen, onClose, preselectedCharacter }) =
         setSelectedCharacterId(characters[0].id);
       }
     }
-  }, [isOpen, preselectedCharacter, characters]);
+  }, [isOpen, preselectedCharacter, preselectedActor, characters]);
 
   if (!isOpen) return null;
 
@@ -108,6 +116,11 @@ export const CastingRequestModal = ({ isOpen, onClose, preselectedCharacter }) =
                 onChange={(e) => setSelectedActorId(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-100 text-xs focus:border-amber-500 focus:outline-none"
               >
+                {selectedActorId && !actors.some(a => a.id === selectedActorId) && (
+                  <option value={selectedActorId}>
+                    ⭐ {selectedActorId} (AI Suggested Talent / Search Verified)
+                  </option>
+                )}
                 {actors.map(a => (
                   <option key={a.id} value={a.id}>
                     {a.name} ({a.skills?.slice(0, 2).join(', ') || a.availability})

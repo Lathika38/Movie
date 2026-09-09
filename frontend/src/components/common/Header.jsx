@@ -233,9 +233,9 @@ export const Header = ({ onOpenCreateMovie, onOpenAiAgent, onToggleMobileSidebar
               <div className="border-t border-slate-800 my-1" />
 
               <button
-                onClick={() => {
+                onClick={async () => {
                   setShowUserDropdown(false);
-                  logout();
+                  await logout();
                 }}
                 className="w-full text-left px-3 py-2 text-xs text-rose-400 hover:bg-rose-500/10 flex items-center gap-2 font-semibold cursor-pointer"
               >

@@ -95,10 +95,10 @@ class FirestoreStore:
         if self.client:
             try:
                 self.client.collection(collection).document(doc_id).set(data_to_store)
-                return data_to_store
             except Exception as e:
                 print(f"Firestore set_document error: {e}")
 
+        # Always maintain local store mirror for consistency
         db = self._read_local_db()
         if collection not in db:
             db[collection] = {}
@@ -122,7 +122,6 @@ class FirestoreStore:
         if self.client:
             try:
                 self.client.collection(collection).document(doc_id).delete()
-                return True
             except Exception as e:
                 print(f"Firestore delete_document error: {e}")
 
@@ -131,7 +130,8 @@ class FirestoreStore:
             del db[collection][doc_id]
             self._write_local_db(db)
             return True
-        return False
+        return True
+
 
     def query_collection(
         self,

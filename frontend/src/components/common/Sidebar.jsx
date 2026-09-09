@@ -20,11 +20,12 @@ import {
   Sliders,
   Settings,
   X,
-  Upload
+  Upload,
+  LogOut
 } from 'lucide-react';
 
 export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
-  const { role, user } = useAuth();
+  const { role, user, logout } = useAuth();
   const location = useLocation();
 
   const getRoleConfig = () => {
@@ -200,16 +201,29 @@ export const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
         </div>
       </div>
 
-      {/* Production Status Card */}
-      <div className="cinema-glass rounded-2xl p-4 border border-slate-800 space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">RBAC SECURITY STATUS</span>
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+      {/* Production Status Card & Sign Out */}
+      <div className="space-y-3">
+        <div className="cinema-glass rounded-2xl p-4 border border-slate-800 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">RBAC SECURITY STATUS</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </div>
+          <p className={`text-xs font-bold ${config.accentColor}`}>{role.replace('_', ' ')} PRIVILEGES</p>
+          <p className="text-[10px] text-slate-400 leading-relaxed">
+            Authorized workspace with real-time Firebase syncing & AI copilot.
+          </p>
         </div>
-        <p className={`text-xs font-bold ${config.accentColor}`}>{role.replace('_', ' ')} PRIVILEGES</p>
-        <p className="text-[10px] text-slate-400 leading-relaxed">
-          Authorized workspace with real-time Firebase syncing & AI copilot.
-        </p>
+
+        <button
+          onClick={() => {
+            onCloseMobile?.();
+            logout();
+          }}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 text-xs font-bold transition-all cursor-pointer"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign Out Workspace
+        </button>
       </div>
     </div>
   );

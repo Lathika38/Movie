@@ -10,7 +10,7 @@ export const DashboardRedirect = () => {
   const { user, role, getRolePath } = useAuth();
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/" replace />;
   }
 
   const targetPath = getRolePath(role);

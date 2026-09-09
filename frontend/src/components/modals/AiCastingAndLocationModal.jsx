@@ -238,7 +238,7 @@ export const AiCastingAndLocationModal = ({
                                     onClick={() => {
                                       onClose();
                                       if (onDispatchCasting) {
-                                        onDispatchCasting(actor);
+                                        onDispatchCasting(actor, roleGroup);
                                       }
                                     }}
                                     className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500 text-amber-400 hover:text-slate-950 font-bold text-[11px] transition-colors cursor-pointer flex items-center gap-1 border border-amber-500/30"

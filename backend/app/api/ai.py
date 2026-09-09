@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException, status
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, status, Depends
 from app.core.database import db
+from app.core.security import get_current_user
+from app.api.movies import is_user_authorized_for_movie
 from app.agents.role_agents import role_agent_orchestrator
 from app.integrations.weather import weather_service
 from app.schemas.ai import (
@@ -11,13 +14,25 @@ from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/ai", tags=["MovieOS Role AI Agents"])
 
-def _persist_ai_analysis(agent_name: str, movie_id: str, scene_id: str, result: dict) -> dict:
+def _check_ai_movie_access(movie_id: str, user: Optional[Dict[str, Any]]):
+    movie = db.get_document("movies", movie_id)
+    if not movie:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+    user_id = user.get("id") if user else None
+    if not is_user_authorized_for_movie(movie, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted: Only authorized production workspace members can invoke AI agents for this movie project."
+        )
+    return movie
+
+def _persist_ai_analysis(agent_name: str, movie_id: str, scene_id: str, result: dict, user_id: str = "USR-CURRENT") -> dict:
     analysis_id = str(uuid.uuid4())
     record = {
         "id": analysis_id,
         "agent": agent_name,
         "createdAt": datetime.now(timezone.utc).isoformat(),
-        "userId": "USR-CURRENT",
+        "userId": user_id,
         "projectId": movie_id,
         "sceneId": scene_id,
         "status": "COMPLETED" if result.get("analysis") != "AI analysis unavailable. Please try again." else "FAILED",
@@ -31,10 +46,11 @@ def _persist_ai_analysis(agent_name: str, movie_id: str, scene_id: str, result: 
 
 
 @router.post("/director", response_model=ApiResponse[AgentResponse])
-def run_director_ai(payload: DirectorAiRequest):
-    movie = db.get_document("movies", payload.movieId)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+def run_director_ai(
+    payload: DirectorAiRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_ai_movie_access(payload.movieId, current_user)
 
     scenes = db.query_collection("scenes", filters=[("movieId", "==", payload.movieId)])
     characters = db.query_collection("characters", filters=[("movieId", "==", payload.movieId)])
@@ -60,15 +76,16 @@ def run_director_ai(payload: DirectorAiRequest):
             "suggestedActions": []
         }
 
-    _persist_ai_analysis("DIRECTOR", payload.movieId, payload.sceneId or "", result)
+    _persist_ai_analysis("DIRECTOR", payload.movieId, payload.sceneId or "", result, user_id=current_user.get("id", "USR-CURRENT"))
     return ApiResponse(success=True, data=AgentResponse(**result))
 
 
 @router.post("/producer", response_model=ApiResponse[AgentResponse])
-async def run_producer_ai(payload: ProducerAiRequest):
-    movie = db.get_document("movies", payload.movieId)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+async def run_producer_ai(
+    payload: ProducerAiRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_ai_movie_access(payload.movieId, current_user)
 
     schedules = db.query_collection("schedules", filters=[("movieId", "==", payload.movieId)])
     departments = db.query_collection("departments", filters=[("movieId", "==", payload.movieId)])
@@ -105,15 +122,16 @@ async def run_producer_ai(payload: ProducerAiRequest):
             "suggestedActions": []
         }
 
-    _persist_ai_analysis("PRODUCER", payload.movieId, "", result)
+    _persist_ai_analysis("PRODUCER", payload.movieId, "", result, user_id=current_user.get("id", "USR-CURRENT"))
     return ApiResponse(success=True, data=AgentResponse(**result))
 
 
 @router.post("/actor", response_model=ApiResponse[AgentResponse])
-def run_actor_ai(payload: ActorAiRequest):
-    movie = db.get_document("movies", payload.movieId)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+def run_actor_ai(
+    payload: ActorAiRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_ai_movie_access(payload.movieId, current_user)
 
     character = db.get_document("characters", payload.characterId)
     if not character:
@@ -144,15 +162,16 @@ def run_actor_ai(payload: ActorAiRequest):
             "suggestedActions": []
         }
 
-    _persist_ai_analysis("ACTOR", payload.movieId, payload.sceneId or "", result)
+    _persist_ai_analysis("ACTOR", payload.movieId, payload.sceneId or "", result, user_id=current_user.get("id", "USR-CURRENT"))
     return ApiResponse(success=True, data=AgentResponse(**result))
 
 
 @router.post("/music", response_model=ApiResponse[AgentResponse])
-def run_music_ai(payload: MusicAiRequest):
-    movie = db.get_document("movies", payload.movieId)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+def run_music_ai(
+    payload: MusicAiRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_ai_movie_access(payload.movieId, current_user)
 
     scene = None
     if payload.sceneNumber is not None:
@@ -184,5 +203,6 @@ def run_music_ai(payload: MusicAiRequest):
             "suggestedActions": []
         }
 
-    _persist_ai_analysis("MUSIC_DIRECTOR", payload.movieId, str(payload.sceneNumber) if payload.sceneNumber is not None else "", result)
+    _persist_ai_analysis("MUSIC_DIRECTOR", payload.movieId, str(payload.sceneNumber) if payload.sceneNumber is not None else "", result, user_id=current_user.get("id", "USR-CURRENT"))
     return ApiResponse(success=True, data=AgentResponse(**result))
+

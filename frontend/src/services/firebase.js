@@ -27,12 +27,13 @@ import {
 } from 'firebase/storage';
 
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDwJnaRqShRVl5DO5qyUCb7-CBn0RXd-o4",
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "movieos-d8f6b.firebaseapp.com",
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "movieos-d8f6b",
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "movieos-d8f6b.firebasestorage.app",
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "12997305018",
-  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:12997305018:web:f1c9b0ce76af94b5875883"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDOEP8-bpTzHket03OMRoT3HduK_aL1rDQ",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "hack1-2ee5e.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "hack1-2ee5e",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "hack1-2ee5e.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "979364356975",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "1:979364356975:web:58540951526970be167e9a",
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID || "G-ZZRXQX45MD"
 };
 
 // Initialize Firebase App instance safely

@@ -1,9 +1,11 @@
 import json
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
-from fastapi import APIRouter, HTTPException, status
+from typing import List, Optional, Dict, Any
+from fastapi import APIRouter, HTTPException, status, Depends
 from app.core.database import db
+from app.core.security import get_current_user
+from app.api.movies import is_user_authorized_for_movie
 from app.agents.gemini_service import gemini_service
 from app.schemas.producer import (
     ScheduleItemCreate, ScheduleItemResponse,
@@ -17,16 +19,36 @@ from app.schemas.common import ApiResponse
 
 router = APIRouter(prefix="/producer", tags=["Producer Production Management"])
 
+def _check_movie_access(movie_id: str, user: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    movie = db.get_document("movies", movie_id)
+    if not movie:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+    user_id = user.get("id") if user else None
+    if not is_user_authorized_for_movie(movie, user_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted: Only authorized production workspace members can access or modify this project."
+        )
+    return movie
+
 # -------------------------------------------------------------
 # SCHEDULES
 # -------------------------------------------------------------
 @router.get("/schedules/{movie_id}", response_model=ApiResponse[List[ScheduleItemResponse]])
-def get_movie_schedules(movie_id: str):
+def get_movie_schedules(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(movie_id, current_user)
     schedules = db.query_collection("schedules", filters=[("movieId", "==", movie_id)], order_by="shootingDate")
     return ApiResponse(success=True, data=[ScheduleItemResponse(**s) for s in schedules])
 
 @router.post("/schedules", response_model=ApiResponse[ScheduleItemResponse])
-def create_schedule_item(payload: ScheduleItemCreate):
+def create_schedule_item(
+    payload: ScheduleItemCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(payload.movieId, current_user)
     sched_id = str(uuid.uuid4())
     data = payload.model_dump()
     data["id"] = sched_id
@@ -36,29 +58,48 @@ def create_schedule_item(payload: ScheduleItemCreate):
     return ApiResponse(success=True, message="Schedule created.", data=ScheduleItemResponse(**created))
 
 @router.put("/schedules/{schedule_id}", response_model=ApiResponse[ScheduleItemResponse])
-def update_schedule_item(schedule_id: str, updates: dict):
-    updated = db.update_document("schedules", schedule_id, updates)
-    if not updated:
+def update_schedule_item(
+    schedule_id: str,
+    updates: dict,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    sched = db.get_document("schedules", schedule_id)
+    if not sched:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+    _check_movie_access(sched.get("movieId"), current_user)
+    updated = db.update_document("schedules", schedule_id, updates)
     return ApiResponse(success=True, message="Schedule updated.", data=ScheduleItemResponse(**updated))
 
 @router.delete("/schedules/{schedule_id}", response_model=ApiResponse[bool])
-def delete_schedule_item(schedule_id: str):
-    deleted = db.delete_document("schedules", schedule_id)
-    if not deleted:
+def delete_schedule_item(
+    schedule_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    sched = db.get_document("schedules", schedule_id)
+    if not sched:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Schedule not found.")
+    _check_movie_access(sched.get("movieId"), current_user)
+    deleted = db.delete_document("schedules", schedule_id)
     return ApiResponse(success=True, message="Schedule deleted.", data=True)
 
 # -------------------------------------------------------------
 # EXPENSES & BUDGET
 # -------------------------------------------------------------
 @router.get("/expenses/{movie_id}", response_model=ApiResponse[List[ExpenseResponse]])
-def get_movie_expenses(movie_id: str):
+def get_movie_expenses(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(movie_id, current_user)
     expenses = db.query_collection("expenses", filters=[("movieId", "==", movie_id)], order_by="date", descending=True)
     return ApiResponse(success=True, data=[ExpenseResponse(**e) for e in expenses])
 
 @router.post("/expenses", response_model=ApiResponse[ExpenseResponse])
-def log_expense(payload: ExpenseCreate):
+def log_expense(
+    payload: ExpenseCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(payload.movieId, current_user)
     exp_id = str(uuid.uuid4())
     data = payload.model_dump()
     data["id"] = exp_id
@@ -75,18 +116,27 @@ def log_expense(payload: ExpenseCreate):
     return ApiResponse(success=True, message="Expense recorded successfully.", data=ExpenseResponse(**created))
 
 @router.put("/expenses/{expense_id}", response_model=ApiResponse[ExpenseResponse])
-def update_expense(expense_id: str, updates: dict):
+def update_expense(
+    expense_id: str,
+    updates: dict,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     exp = db.get_document("expenses", expense_id)
     if not exp:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found.")
+    _check_movie_access(exp.get("movieId"), current_user)
     updated = db.update_document("expenses", expense_id, updates)
     return ApiResponse(success=True, message="Expense updated successfully.", data=ExpenseResponse(**updated))
 
 @router.delete("/expenses/{expense_id}", response_model=ApiResponse[bool])
-def delete_expense(expense_id: str):
+def delete_expense(
+    expense_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
     exp = db.get_document("expenses", expense_id)
     if not exp:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found.")
+    _check_movie_access(exp.get("movieId"), current_user)
     
     # Decrement department spent if matched
     deps = db.query_collection("departments", filters=[("movieId", "==", exp.get("movieId"))])
@@ -97,16 +147,14 @@ def delete_expense(expense_id: str):
             db.update_document("departments", d["id"], {"budgetSpent": new_spent})
 
     deleted = db.delete_document("expenses", expense_id)
-    if not deleted:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Expense not found.")
     return ApiResponse(success=True, message="Expense deleted successfully.", data=True)
 
 @router.get("/budget-breakdown/{movie_id}", response_model=ApiResponse[BudgetSchema])
-def get_budget_breakdown(movie_id: str):
-    movie = db.get_document("movies", movie_id)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
-
+def get_budget_breakdown(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_movie_access(movie_id, current_user)
     total_budget = movie.get("budget", 1000000.0)
     expenses = db.query_collection("expenses", filters=[("movieId", "==", movie_id)])
 
@@ -140,12 +188,20 @@ def get_budget_breakdown(movie_id: str):
 # DEPARTMENTS
 # -------------------------------------------------------------
 @router.get("/departments/{movie_id}", response_model=ApiResponse[List[DepartmentResponse]])
-def get_movie_departments(movie_id: str):
+def get_movie_departments(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(movie_id, current_user)
     deps = db.query_collection("departments", filters=[("movieId", "==", movie_id)])
     return ApiResponse(success=True, data=[DepartmentResponse(**d) for d in deps])
 
 @router.post("/departments", response_model=ApiResponse[DepartmentResponse])
-def create_department(payload: DepartmentCreate):
+def create_department(
+    payload: DepartmentCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(payload.movieId, current_user)
     dep_id = str(uuid.uuid4())
     data = payload.model_dump()
     data["id"] = dep_id
@@ -154,29 +210,48 @@ def create_department(payload: DepartmentCreate):
     return ApiResponse(success=True, message="Department added.", data=DepartmentResponse(**created))
 
 @router.put("/departments/{dep_id}", response_model=ApiResponse[DepartmentResponse])
-def update_department(dep_id: str, updates: dict):
-    updated = db.update_document("departments", dep_id, updates)
-    if not updated:
+def update_department(
+    dep_id: str,
+    updates: dict,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    dep = db.get_document("departments", dep_id)
+    if not dep:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found.")
+    _check_movie_access(dep.get("movieId"), current_user)
+    updated = db.update_document("departments", dep_id, updates)
     return ApiResponse(success=True, message="Department updated.", data=DepartmentResponse(**updated))
 
 @router.delete("/departments/{dep_id}", response_model=ApiResponse[bool])
-def delete_department(dep_id: str):
-    deleted = db.delete_document("departments", dep_id)
-    if not deleted:
+def delete_department(
+    dep_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    dep = db.get_document("departments", dep_id)
+    if not dep:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Department not found.")
+    _check_movie_access(dep.get("movieId"), current_user)
+    deleted = db.delete_document("departments", dep_id)
     return ApiResponse(success=True, message="Department deleted.", data=True)
 
 # -------------------------------------------------------------
 # RESOURCES
 # -------------------------------------------------------------
 @router.get("/resources/{movie_id}", response_model=ApiResponse[List[ResourceResponse]])
-def get_movie_resources(movie_id: str):
+def get_movie_resources(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(movie_id, current_user)
     res = db.query_collection("resources", filters=[("movieId", "==", movie_id)])
     return ApiResponse(success=True, data=[ResourceResponse(**r) for r in res])
 
 @router.post("/resources", response_model=ApiResponse[ResourceResponse])
-def create_resource(payload: ResourceCreate):
+def create_resource(
+    payload: ResourceCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(payload.movieId, current_user)
     res_id = str(uuid.uuid4())
     data = payload.model_dump()
     data["id"] = res_id
@@ -185,22 +260,36 @@ def create_resource(payload: ResourceCreate):
     return ApiResponse(success=True, message="Resource recorded.", data=ResourceResponse(**created))
 
 @router.put("/resources/{res_id}", response_model=ApiResponse[ResourceResponse])
-def update_resource(res_id: str, updates: dict):
-    updated = db.update_document("resources", res_id, updates)
-    if not updated:
+def update_resource(
+    res_id: str,
+    updates: dict,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    r = db.get_document("resources", res_id)
+    if not r:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resource not found.")
+    _check_movie_access(r.get("movieId"), current_user)
+    updated = db.update_document("resources", res_id, updates)
     return ApiResponse(success=True, message="Resource updated.", data=ResourceResponse(**updated))
 
 # -------------------------------------------------------------
 # RISKS
 # -------------------------------------------------------------
 @router.get("/risks/{movie_id}", response_model=ApiResponse[List[RiskResponse]])
-def get_movie_risks(movie_id: str):
+def get_movie_risks(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(movie_id, current_user)
     risks = db.query_collection("risks", filters=[("movieId", "==", movie_id)])
     return ApiResponse(success=True, data=[RiskResponse(**r) for r in risks])
 
 @router.post("/risks", response_model=ApiResponse[RiskResponse])
-def log_risk(payload: RiskCreate):
+def log_risk(
+    payload: RiskCreate,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    _check_movie_access(payload.movieId, current_user)
     r_id = str(uuid.uuid4())
     data = payload.model_dump()
     data["id"] = r_id
@@ -212,10 +301,11 @@ def log_risk(payload: RiskCreate):
 # PRODUCER AI ASSISTANT: ANALYZE & FIX SCHEDULES, BUDGET & LEDGER, DEPARTMENTS
 # -------------------------------------------------------------
 @router.post("/ai-generate-and-fix/{movie_id}", response_model=ApiResponse[dict])
-def ai_generate_and_fix_producer_data(movie_id: str):
-    movie = db.get_document("movies", movie_id)
-    if not movie:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Movie not found.")
+def ai_generate_and_fix_producer_data(
+    movie_id: str,
+    current_user: Dict[str, Any] = Depends(get_current_user)
+):
+    movie = _check_movie_access(movie_id, current_user)
 
     scenes = db.query_collection("scenes", filters=[("movieId", "==", movie_id)], order_by="sceneNumber")
     total_budget = movie.get("budget", 5000000.0)
@@ -252,49 +342,13 @@ def ai_generate_and_fix_producer_data(movie_id: str):
         except Exception as err:
             print("[AI Generate Producer Data Parsing Error]:", err)
 
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
     if not parsed or not isinstance(parsed, dict):
-        parsed = {
-            "schedules": [
-                {
-                    "title": f"Day 1: Principal Photography & Scene 1-3 — {title}",
-                    "shootingDate": today,
-                    "startTime": "07:30",
-                    "endTime": "18:30",
-                    "location": "Main Soundstage A",
-                    "setting": "INT",
-                    "weatherRiskLevel": "LOW",
-                    "status": "SCHEDULED",
-                    "notes": "Principal photography launch. Primary camera setup at 07:00."
-                },
-                {
-                    "title": f"Day 2: Location Stunts & Exterior Action",
-                    "shootingDate": today,
-                    "startTime": "08:00",
-                    "endTime": "19:00",
-                    "location": "Downtown Cinema Plaza",
-                    "setting": "EXT",
-                    "weatherRiskLevel": "MEDIUM",
-                    "status": "SCHEDULED",
-                    "notes": "Exterior shooting day. Track weather and wind safety telemetry."
-                }
-            ],
-            "departments": [
-                {"name": "Camera & Grip", "headOfDepartment": "Marcus Vance", "budgetAllocated": total_budget * 0.35, "budgetSpent": total_budget * 0.08, "teamCount": 12, "status": "ACTIVE", "taskSummary": "Alexa 35 anamorphic package & dolly setup"},
-                {"name": "Sound & Audio", "headOfDepartment": "Elena Rostova", "budgetAllocated": total_budget * 0.15, "budgetSpent": total_budget * 0.03, "teamCount": 6, "status": "ACTIVE", "taskSummary": "Multi-channel wireless boom & lavalier arrays"},
-                {"name": "Art & Set Design", "headOfDepartment": "Julian Thorne", "budgetAllocated": total_budget * 0.20, "budgetSpent": total_budget * 0.05, "teamCount": 14, "status": "ACTIVE", "taskSummary": "Soundstage set construction & prop dressing"},
-                {"name": "Costume & Makeup", "headOfDepartment": "Chloe Bennett", "budgetAllocated": total_budget * 0.10, "budgetSpent": total_budget * 0.02, "teamCount": 8, "status": "ACTIVE", "taskSummary": "Lead wardrobe fitting & special FX makeup"},
-                {"name": "Post-Production & VFX", "headOfDepartment": "David Sterling", "budgetAllocated": total_budget * 0.20, "budgetSpent": total_budget * 0.04, "teamCount": 10, "status": "ACTIVE", "taskSummary": "Color grading, Dolby Atmos mixing & VFX composite"}
-            ],
-            "expenses": [
-                {"description": "ARRI Alexa 35 Camera Package 4-Week Rental", "category": "Production & Camera", "department": "Camera & Grip", "amount": 45000.0, "date": today, "vendor": "Panavision Rentals", "status": "APPROVED"},
-                {"description": "Soundstage Rental & High-Voltage Power Hookup", "category": "Production & Camera", "department": "Art & Set Design", "amount": 28000.0, "date": today, "vendor": "Raleigh Studios", "status": "APPROVED"},
-                {"description": "Lead Wardrobe Tailoring & Period Costumes", "category": "Art, Costume & Makeup", "department": "Costume & Makeup", "amount": 14500.0, "date": today, "vendor": "Western Costume Co", "status": "APPROVED"}
-            ]
-        }
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Producer AI Assistant analysis unavailable. Check Gemini service configuration and try again."
+        )
 
-    # Save to database
+    # Save to database only when valid AI parsed result exists
     created_schedules = []
     for s_item in parsed.get("schedules", []):
         sch_id = str(uuid.uuid4())
@@ -324,10 +378,11 @@ def ai_generate_and_fix_producer_data(movie_id: str):
 
     return ApiResponse(
         success=True,
-        message=f"Producer AI Assistant successfully analyzed '{title}' and fixed schedules, budget, & department ledger!",
+        message=f"Producer AI Assistant successfully analyzed '{title}' and updated production schedules, budget, & department ledger!",
         data={
             "schedules": created_schedules,
             "departments": created_departments,
             "expenses": created_expenses
         }
     )
+

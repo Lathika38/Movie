@@ -20,5 +20,13 @@ export const castingApi = {
       actorResponseNote
     });
     return res.data;
+  },
+  getScriptCharacterMatches: async (movieId) => {
+    const res = await api.get(`/casting/script-matches/${movieId}`);
+    return res.data;
+  },
+  assignDirect: async (payload) => {
+    const res = await api.post('/casting/assign-direct', payload);
+    return res.data;
   }
 };

@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/authApi';
 import {
   registerWithFirebase,
@@ -62,6 +63,7 @@ export const DEMO_PROFILES = [
 ];
 
 export const AuthProvider = ({ children }) => {
+  const navigate = useNavigate();
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('movieos_user');
     if (saved) {
@@ -178,9 +180,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = async () => {
-    await logoutFromFirebase();
+    try {
+      await logoutFromFirebase();
+    } catch (e) {
+      console.warn("Firebase logout note:", e.message);
+    }
     setUser(null);
     localStorage.removeItem('movieos_user');
+    localStorage.removeItem('movieos_active_movie_id');
+    navigate('/', { replace: true });
   };
 
   const getRolePath = (role) => {
@@ -190,7 +198,7 @@ export const AuthProvider = ({ children }) => {
       case 'ACTOR': return '/actor';
       case 'MUSIC_DIRECTOR': return '/music-director';
       case 'ADMIN': return '/admin';
-      default: return '/director';
+      default: return '/';
     }
   };
 
@@ -206,8 +214,9 @@ export const AuthProvider = ({ children }) => {
       getRolePath,
       uploadAsset: uploadFileToFirebaseStorage,
       isAuthenticated: !!user,
-      role: user?.role || 'DIRECTOR'
+      role: user?.role || null
     }}>
+
       {children}
     </AuthContext.Provider>
   );
